@@ -5,78 +5,102 @@ import socket
 import re
 import datetime
 
-page_header     = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: text/html; charset=UTF-8\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
-image_header    = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: image/gif\x0d\x0aContent-Transfer-Encoding: binary\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
-not_found       = "HTTP/1.1 404 Not Found\x0d\x0a\x0d\x0a"
-request_timeout = "HTTP/1.1 408 Request Timeout\x0d\x0a\x0d\x0a"
-teapot          = "HTTP/1.1 418 I'm a teapot\x0d\x0a\x0d\x0a"
-bad_request     = "HTTP/1.1 500 Bad Request\x0d\x0a\x0d\x0a"
-not_implemented = "HTTP/1.1 501 Not Implemented\x0d\x0a\x0d\x0a"
+class LogFile:
+	def __init__(self, msg):
+		name = f"{str(datetime.datetime.now()).replace(' ', '_')}.log"
+		self.file = open(name, 'w+')
+		out = f"{datetime.datetime.now()}: {msg}"
+		self.file.write(out + '\n')
+		self.file.flush()
+		print(out)
+	def log(self, addr, msg):
+		out = f"{datetime.datetime.now()}: {addr[0]}: {msg}"
+		self.file.write(out + '\n')
+		self.file.flush()
+		print(out)
+	def log_req(self, addr, req):
+		time = datetime.datetime.now()
+		self.file.write(f"{time}: {addr[0]}: New request:\n{req}")
+		self.file.flush()
+		tokens = req.split()
+		try:
+			cmd = tokens[0]
+			name = 'index.html' if tokens[1] == '/' else tokens[1][1:]
+			print(f"{time}: {addr[0]}: {cmd} {name}")
+		except:
+			print(f"{time}: {addr[0]}: Invalid header")
+	def log_err(self, msg):
+		out = f"\t=> Error: {msg}"
+		self.file.write(out + '\n\n')
+		self.file.flush()
+		print(out)
+	def __del__(self):
+		self.file.close()
 
-def handle_client(client, addr):
+PAGE_HEADER     = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: text/html; charset=UTF-8\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
+IMAGE_HEADER    = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: image/gif\x0d\x0aContent-Transfer-Encoding: binary\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
+NOT_FOUND       = "HTTP/1.1 404 Not Found\x0d\x0a\x0d\x0a"
+REQUEST_TIMEOUT = "HTTP/1.1 408 Request Timeout\x0d\x0a\x0d\x0a"
+TEAPOT          = "HTTP/1.1 418 I'm a TEAPOT\x0d\x0a\x0d\x0a"
+BAD_REQUEST     = "HTTP/1.1 500 Bad Request\x0d\x0a\x0d\x0a"
+NOT_IMPLEMENTED = "HTTP/1.1 501 Not Implemented\x0d\x0a\x0d\x0a"
+
+def handle_client(client, addr, logfile):
 	try:
 		req = client.recv(4096).decode('utf-8')
 	except socket.timeout:
-		print(f"{datetime.datetime.now()}: {addr[0]}: Connection timed out")
-		client.send(bytes(request_timeout, 'utf-8'))
+		logfile.log(addr, "Connection timed out")
+		client.send(bytes(REQUEST_TIMEOUT, 'utf-8'))
 		client.close()
 		return
 	except Exception as e:
-		print(f"{datetime.datetime.now()}: {addr[0]}: CONNECTION CLOSED DUE TO AN INTERNAL EXCEPTION:")
-		print(str(e))
-		client.send(bytes(bad_request, 'utf-8'))
+		logfile.log(addr, f"CONNECTION CLOSED DUE TO INTERNAL EXCEPTION:\n\t=> {str(e)}")
+		client.send(bytes(BAD_REQUEST, 'utf-8'))
 		client.close()
 		return
 
+	logfile.log_req(addr, req)
 	full = req
 	req = req.split('\n')[0].split()
-	if len(req) < 3 or full[-4:] != '\x0d\x0a\x0d\x0a':
-		print(f"{datetime.datetime.now()}: {addr[0]}: Bad header format")
-		client.send(bytes(bad_request, 'utf-8'))
+	if len(req) < 3 or '\x0d\x0a\x0d\x0a' not in full:
+		logfile.log_err("500 bad request")
+		client.send(bytes(BAD_REQUEST, 'utf-8'))
 		client.close()
 		return
 	cmd = req[0]
-	name = req[1]
-	if name == '/':
-		name = 'index.html'
-	else:
-		name = name[1:]
+	name = 'index.html' if req[1] == '/' else req[1][1:]
 
 	if cmd in ['GET', 'HEAD']:
-		print(f"{datetime.datetime.now()}: {addr[0]}: {cmd} {name}")
 		try:
 			ext = re.search(r"\.([a-z]+)($|\?)", name).group(1)
 			if '../' in name or ext not in ['html', 'css', 'js', 'php', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico']:
 				raise Exception()
 			if ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico']:
 				with open(name, 'rb') as file:
-					response = bytes(image_header, 'utf-8')
+					response = bytes(IMAGE_HEADER, 'utf-8')
 					if cmd == 'GET':
 						response += file.read()
 			else:
 				with open(name, 'r') as file:
-					response = bytes(page_header, 'utf-8')
+					response = bytes(PAGE_HEADER, 'utf-8')
 					if cmd == 'GET':
 						response += bytes(file.read(), 'utf-8')
 			client.send(response)
 		except Exception:
-			print(f"\t=> Error: 404 not found")
-			client.send(bytes(not_found, 'utf-8'))
+			logfile.log_err("404 not found")
+			client.send(bytes(NOT_FOUND, 'utf-8'))
 
 	elif cmd == 'BREW':
-		print(f"{datetime.datetime.now()}: {addr[0]}: {cmd} {name}")
-		print("\t=> Error: 418 I'm a teapot")
-		client.send(bytes(teapot, 'utf-8'))
+		logfile.log_err("418 I'm a teapot")
+		client.send(bytes(TEAPOT, 'utf-8'))
 
 	elif cmd in ['POST', 'PUT', 'DELETE', 'TRACE', 'OPTIONS', 'CONNECT', 'PATCH']:
-		print(f"{datetime.datetime.now()}: {addr[0]}: Showing full request:\n{full}")
-		print("\t=> Error: 501 not implemented\n")
-		client.send(bytes(not_implemented, 'utf-8'))
+		logfile.log_err("501 not implemented")
+		client.send(bytes(NOT_IMPLEMENTED, 'utf-8'))
 
 	else:
-		print(f"{datetime.datetime.now()}: {addr[0]}: Showing full request:\n{full}")
-		print("\t=> Error: 500 bad request\n")
-		client.send(bytes(bad_request, 'utf-8'))
+		logfile.log_err("500 bad request")
+		client.send(bytes(BAD_REQUEST, 'utf-8'))
 
 	client.close()
 
@@ -90,12 +114,15 @@ if __name__ == '__main__':
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.bind((args.address, args.port))
 	s.listen(16)
-	print(f"{datetime.datetime.now()}: Started server at {args.address}:{str(args.port)}")
+
+	logfile = LogFile(f"Started server on {args.address}:{args.port}")
 
 	while True:
-		client, addr = s.accept()
-		client.settimeout(10)
 		try:
-			handle_client(client, addr)
+			client, addr = s.accept()
+			client.settimeout(10)
+			handle_client(client, addr, logfile)
+		except KeyboardInterrupt:
+			exit(0)
 		except Exception:
 			client.close()
