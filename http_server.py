@@ -39,10 +39,10 @@ class LogFile:
 
 PAGE_HEADER     = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: text/html; charset=UTF-8\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
 IMAGE_HEADER    = "HTTP/1.1 200 OK\x0d\x0aServer: dumb_python_script\x0d\x0aContent-Type: image/gif\x0d\x0aContent-Transfer-Encoding: binary\x0d\x0aConnection: close\x0d\x0a\x0d\x0a"
+BAD_REQUEST     = "HTTP/1.1 400 Bad Request\x0d\x0a\x0d\x0a"
 NOT_FOUND       = "HTTP/1.1 404 Not Found\x0d\x0a\x0d\x0a"
 REQUEST_TIMEOUT = "HTTP/1.1 408 Request Timeout\x0d\x0a\x0d\x0a"
 TEAPOT          = "HTTP/1.1 418 I'm a TEAPOT\x0d\x0a\x0d\x0a"
-BAD_REQUEST     = "HTTP/1.1 500 Bad Request\x0d\x0a\x0d\x0a"
 NOT_IMPLEMENTED = "HTTP/1.1 501 Not Implemented\x0d\x0a\x0d\x0a"
 
 def handle_client(client, addr, logfile):
@@ -63,7 +63,7 @@ def handle_client(client, addr, logfile):
 	full = req
 	req = req.split('\n')[0].split()
 	if len(req) < 3 or '\x0d\x0a\x0d\x0a' not in full:
-		logfile.log_err("500 bad request")
+		logfile.log_err("400 bad request")
 		client.send(bytes(BAD_REQUEST, 'utf-8'))
 		client.close()
 		return
@@ -99,7 +99,7 @@ def handle_client(client, addr, logfile):
 		client.send(bytes(NOT_IMPLEMENTED, 'utf-8'))
 
 	else:
-		logfile.log_err("500 bad request")
+		logfile.log_err("400 bad request")
 		client.send(bytes(BAD_REQUEST, 'utf-8'))
 
 	client.close()
